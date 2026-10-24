@@ -34,19 +34,23 @@ graph TD
 
 ## 2. SƠ ĐỒ ĐẤU NỐI CHÂN PHẦN CỨNG (PINOUT MAPPING)
 
-Dành cho phiên bản kiểm thử 1 ngăn tủ mẫu (Box #1):
+Tủ có 3 ngăn (số ngăn 1, 2, 3 tương ứng cỡ S, M, L). Bảng chân khai báo trong `src/config/Config.h` (`BOXES[]`). Relay là **Active HIGH** (mức `HIGH` cấp điện mở khóa, jumper relay đặt ở H).
 
-| Linh kiện | Chân trên linh kiện | Chân trên ESP32 | Chức năng & Chế độ | Ghi chú kỹ thuật |
-| :--- | :--- | :--- | :--- | :--- |
-| **Relay Module** | `IN1` | **GPIO 13** | `OUTPUT` (Active LOW) | Mức `LOW` = Rơ-le hút (Cấp điện 12V mở Solenoid), Mức `HIGH` = Rơ-le nhả |
-| | `VCC` | Chân `VIN` (5V) | Cấp nguồn nuôi Relay | Nguồn từ cổng USB hoặc Adapter 5V |
-| | `GND` | Chân `GND` | Nối đất chung | Bắt buộc chung GND với nguồn 12V |
-| **Khóa Solenoid**| Dây dương (+) | Chân `NO` Relay | Chấp hành mở cửa | Cổng `COM` của Relay nối với cực (+) nguồn 12V DC |
-| | Dây âm (-) | Cực (-) nguồn 12V | Nối đất nguồn ngoài | Khóa chỉ cấp điện xung 2-3s để tránh cháy cuộn dây |
-| **Reed Switch** | Dây tín hiệu | **GPIO 14** | `INPUT_PULLUP` | Cửa đóng = Nam châm hút $\rightarrow$ Mức `LOW`. Cửa mở = Hở mạch $\rightarrow$ Mức `HIGH` |
-| | Dây còn lại | Chân `GND` | Nối đất | Không cần điện trở ngoài do dùng Pull-up nội |
-| **Cảm Biến IR** | Chân `OUT` | **GPIO 27** | `INPUT` | Có vật cản (gói hàng) = Mức `LOW`. Không có vật cản = Mức `HIGH` |
-| | `VCC` / `GND` | `3V3` / `GND` | Cấp nguồn cảm biến | Chỉnh biến trở trên cảm biến để đạt cự ly 15-20cm |
+| Ngăn | Relay `IN` | Reed (cửa đóng = LOW) | IR `OUT` (có hàng = LOW) |
+| :--- | :--- | :--- | :--- |
+| 1 (S) | IN1 ← **GPIO 13** | **GPIO 32** | **GPIO 35** |
+| 2 (M) | IN2 ← **GPIO 14** | **GPIO 33** | **GPIO 34** |
+| 3 (L) | IN3 ← **GPIO 27** | **GPIO 25** | **GPIO 36** (SP) |
+
+Kênh nối với ESP32-CAM: ESP32 chính `GPIO 16` (trigger) tới `GPIO 13` của cam, `GPIO 17` (status) từ `GPIO 12` của cam.
+
+| Linh kiện | Chân trên linh kiện | Nối với | Ghi chú kỹ thuật |
+| :--- | :--- | :--- | :--- |
+| **Relay Module** | `VCC` / `GND` | `VIN` (5V) / `GND` | Bắt buộc chung GND với nguồn 12V; nếu ESP32 reset khi khóa hút thì cấp nguồn 5V riêng |
+| **Khóa Solenoid** (mỗi ngăn) | Dây dương (+) | `NO` của kênh relay tương ứng | `COM` của relay nối cực (+) nguồn 12V; dây âm (-) nối GND; thêm diode chống ngược song song cuộn hút |
+| **Reed Switch** (mỗi ngăn) | `DO` | GPIO ở bảng trên, `INPUT_PULLUP` | Cửa đóng = nam châm hút = `LOW`; cửa mở = `HIGH` |
+| **Cảm Biến IR** (mỗi ngăn) | `OUT` | GPIO ở bảng trên, `INPUT` | GPIO 34, 35, 36 chỉ là đầu vào, không có pull-up nội nên cần module tự kéo mức (hoặc thêm 10 kΩ lên 3V3) |
+| | `VCC` / `GND` | `3V3` / `GND` | Chỉnh biến trở trên cảm biến để đạt cự ly 15-20cm |
 
 ---
 

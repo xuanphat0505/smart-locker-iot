@@ -184,4 +184,5 @@ public:
 
   // Lấy trạng thái hiển thị hiện tại của màn hình
   DisplayState getCurrentState() const { return currentState; }
+  int getCurrentUnlockedBox() const { return currentUnlockedBox; }
 };

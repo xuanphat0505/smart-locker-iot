@@ -8,6 +8,7 @@ private:
   bool lastDoorClosed;
   bool lastHasItem;
   unsigned long lastCheckTime;
+  unsigned long lastIrCheckTime;
 
 public:
   SensorManager(uint8_t reed, uint8_t ir);

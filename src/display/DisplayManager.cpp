@@ -24,7 +24,7 @@ DisplayManager::DisplayManager()
     currentState(STATE_WIFI_CONNECTING),
     enteredPin(""),
     stateStartTime(0),
-    currentUnlockedBox(BOX_NUMBER),
+    currentUnlockedBox(0),
     currentErrorMessage("INVALID PIN CODE"),
     currentSsid(""),
     dotFrame(0),
@@ -32,7 +32,7 @@ DisplayManager::DisplayManager()
     wasTouched(false),
     lastTouchTime(0),
     otpSubmitCallback(nullptr),
-    paymentBoxNumber(BOX_NUMBER),
+    paymentBoxNumber(0),
     paymentFeeAmount(0),
     paymentOrderCode(0),
     paymentQrPayload(""),
@@ -149,7 +149,7 @@ void DisplayManager::showSuccess(int boxNumber) {
 
 // Kích hoạt hiển thị màn hình thanh toán cước phí mở tủ kèm mã QR
 void DisplayManager::showPaymentQr(int boxNumber, int feeAmount, long orderCode, const char* qrPayload, const char* message) {
-  paymentBoxNumber = boxNumber > 0 ? boxNumber : BOX_NUMBER;
+  paymentBoxNumber = boxNumber > 0 ? boxNumber : 0;
   paymentFeeAmount = feeAmount;
   paymentOrderCode = orderCode;
   paymentQrPayload = qrPayload ? qrPayload : "";
