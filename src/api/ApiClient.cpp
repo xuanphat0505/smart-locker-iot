@@ -57,7 +57,7 @@ OtpVerifyResult ApiClient::verifyPickupOtp(const char* lockerCode, const char* p
       if (resDoc["requiresPayment"] | false) {
         result.success = false;
         result.requiresPayment = true;
-        result.boxNumber = resDoc["boxNumber"] | BOX_NUMBER;
+        result.boxNumber = resDoc["boxNumber"] | 0;
         result.feeAmount = resDoc["feeAmount"] | 0;
         result.orderCode = resDoc["orderCode"] | 0;
         result.qrPayload = resDoc["qrPayload"].as<String>();
@@ -66,7 +66,7 @@ OtpVerifyResult ApiClient::verifyPickupOtp(const char* lockerCode, const char* p
       } else {
         result.success = true;
         result.requiresPayment = false;
-        result.boxNumber = resDoc["boxNumber"] | resDoc["package"]["boxNumber"] | BOX_NUMBER;
+        result.boxNumber = resDoc["boxNumber"] | resDoc["package"]["boxNumber"] | 0;
         result.errorMessage = "";
       }
     } else {

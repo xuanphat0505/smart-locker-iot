@@ -1,8 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include "config/Config.h"
-#include "lock/LockManager.h"
-#include "sensor/SensorManager.h"
+#include "box/BoxController.h"
 #include "network/NetworkManager.h"
 #include "mqtt/MqttManager.h"
 #include "ble/BleManager.h"
@@ -10,9 +9,8 @@
 #include "api/ApiClient.h"
 
 // Khởi tạo các module thành phần của tủ thông minh
-LockManager lockManager(RELAY_PIN);
-SensorManager sensorManager(REED_SWITCH_PIN, IR_SENSOR_PIN);
-MqttManager mqttManager(lockManager, sensorManager);
+BoxController boxController;
+MqttManager mqttManager(boxController);
 BleManager bleManager;
 DisplayManager displayManager;
 
@@ -22,8 +20,10 @@ void setup() {
   Serial.println("\n=== SMART LOCKER IOT CONTROLLER ===");
 
   displayManager.begin();
-  lockManager.begin();
-  sensorManager.begin();
+  boxController.begin();
+#ifdef BOX_SELFTEST
+  boxController.runRelaySelfTest();
+#endif
 
   // Hiển thị màn hình kết nối WiFi trước khi thực sự kết nối
   displayManager.showWifiConnecting(WIFI_SSID);
@@ -71,17 +71,25 @@ void setup() {
     OtpVerifyResult res = ApiClient::verifyPickupOtp(LOCKER_CODE, pin.c_str());
 
     if (res.requiresPayment) {
-      int targetBox = res.boxNumber > 0 ? res.boxNumber : BOX_NUMBER;
+      int targetBox = res.boxNumber;
+      if (!boxController.hasBox(targetBox)) {
+        Serial.printf("[KIOSK_OTP] Server trả số ngăn không hợp lệ: %d\n", targetBox);
+        displayManager.showError("BOX UNAVAILABLE");
+        return;
+      }
       Serial.printf("[KIOSK_OTP] Yêu cầu thanh toán cước phí: %d VNĐ cho Ngăn #%d (Order #%ld)\n",
                     res.feeAmount, targetBox, res.orderCode);
       displayManager.showPaymentQr(targetBox, res.feeAmount, res.orderCode,
                                    res.qrPayload.c_str(), res.errorMessage.c_str());
     } else if (res.success) {
-      int targetBox = res.boxNumber > 0 ? res.boxNumber : BOX_NUMBER;
+      int targetBox = res.boxNumber;
       Serial.printf("[KIOSK_OTP] Xác thực thành công từ Server -> Mở Ngăn #%d\n", targetBox);
-      lockManager.unlock(5000);
+      if (!boxController.unlock(targetBox, 5000)) {
+        displayManager.showError("BOX UNAVAILABLE");
+        return;
+      }
       displayManager.showSuccess(targetBox);
-      mqttManager.publishStatus("DOOR_UNLOCKED");
+      mqttManager.publishStatus("DOOR_UNLOCKED", targetBox);
     } else {
       Serial.printf("[KIOSK_OTP] Xác thực thất bại: %s -> Hiển thị lỗi\n", res.errorMessage.c_str());
       displayManager.showError(res.errorMessage.c_str());
@@ -93,7 +101,7 @@ void loop() {
   displayManager.update();
   NetworkManager::maintainConnection();
   mqttManager.update();
-  lockManager.update();
+  boxController.update();
 
   // Kiểm tra tín hiệu báo lỗi từ ESP32-CAM khi đang chờ xác thực khuôn mặt
   if (displayManager.getCurrentState() == STATE_FACE_PROCESSING) {
@@ -103,32 +111,35 @@ void loop() {
     }
   }
 
-  // Phát hiện thay đổi trạng thái đóng mở cửa để báo cáo MQTT
-  bool doorClosed = false;
-  if (sensorManager.checkDoorStateChanged(doorClosed)) {
-    if (doorClosed) {
-      Serial.println("[SENSOR] Cánh cửa vừa được đóng kín!");
-      mqttManager.publishStatus("DOOR_CLOSED");
+  // Quét cảm biến của mọi ngăn, mỗi sự kiện được báo kèm số ngăn của chính cảm biến vừa đổi trạng thái
+  boxController.pollSensors([](int box, BoxEvent event) {
+    switch (event) {
+      case BOX_DOOR_CLOSED:
+        Serial.printf("[SENSOR] Ngăn #%d: cánh cửa vừa được đóng kín!\n", box);
+        mqttManager.publishStatus("DOOR_CLOSED", box);
 
-      // Quay về màn hình chờ ngay khi người dùng đóng kín cửa tủ
-      if (displayManager.getCurrentState() == STATE_SUCCESS) {
-        displayManager.showIdle();
-      }
-    } else {
-      Serial.println("[SENSOR] Cánh cửa vừa được bật mở!");
-      mqttManager.publishStatus("DOOR_OPENED");
+        // Quay về màn hình chờ khi người dùng đóng kín cửa của đúng ngăn vừa được mở
+        if (displayManager.getCurrentState() == STATE_SUCCESS &&
+            displayManager.getCurrentUnlockedBox() == box) {
+          displayManager.showIdle();
+        }
+        break;
+      case BOX_DOOR_OPENED:
+        Serial.printf("[SENSOR] Ngăn #%d: cánh cửa vừa được bật mở!\n", box);
+        mqttManager.publishStatus("DOOR_OPENED", box);
+        break;
+      case BOX_ITEM_DETECTED:
+        Serial.printf("[SENSOR] Ngăn #%d: cảm biến IR phát hiện bưu phẩm!\n", box);
+        mqttManager.publishStatus("ITEM_DETECTED", box);
+        break;
+      case BOX_ITEM_REMOVED:
+        Serial.printf("[SENSOR] Ngăn #%d đã trống!\n", box);
+        mqttManager.publishStatus("ITEM_REMOVED", box);
+        break;
     }
-  }
+  });
 
-  // Phát hiện thay đổi trạng thái vật thể trong ngăn tủ qua cảm biến quang IR
-  bool hasItem = false;
-  if (sensorManager.checkItemStateChanged(hasItem)) {
-    if (hasItem) {
-      Serial.println("[SENSOR] Cảm biến IR phát hiện bưu phẩm trong ngăn!");
-      mqttManager.publishStatus("ITEM_DETECTED");
-    } else {
-      Serial.println("[SENSOR] Ngăn tủ đã trống!");
-      mqttManager.publishStatus("ITEM_REMOVED");
-    }
-  }
+#ifdef BOX_SELFTEST
+  boxController.printSensorSnapshot();
+#endif
 }

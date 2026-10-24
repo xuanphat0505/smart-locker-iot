@@ -17,6 +17,9 @@ void LockManager::unlock(unsigned long durationMs) {
   isRelayActive = true;
   relayStartTime = millis();
   relayDurationMs = durationMs > 0 ? durationMs : 5000;
+  if (relayDurationMs > MAX_UNLOCK_MS) {
+    relayDurationMs = MAX_UNLOCK_MS;
+  }
 }
 
 // Đếm thời gian không chặn luồng để tự động ngắt điện bảo vệ cuộn hút

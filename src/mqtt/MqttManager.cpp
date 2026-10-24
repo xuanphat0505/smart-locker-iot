@@ -14,8 +14,8 @@ static void staticCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 // Khởi tạo đối tượng quản lý giao thức MQTT kết nối với các module liên quan
-MqttManager::MqttManager(LockManager& lock, SensorManager& sensor)
-  : mqttClient(secureClient), lockManager(lock), sensorManager(sensor) {
+MqttManager::MqttManager(BoxController& boxes)
+  : mqttClient(secureClient), boxController(boxes) {
   instance = this;
   controlTopic = String("smartlocker/") + LOCKER_CODE + "/control";
   statusTopic = String("smartlocker/") + LOCKER_CODE + "/status";
@@ -28,8 +28,6 @@ void MqttManager::begin() {
   mqttClient.setCallback(staticCallback);
   mqttClient.setBufferSize(1536);
 }
-
-static int currentActiveBox = BOX_NUMBER;
 
 // Xử lý bản tin điều khiển nhận được từ Broker
 void MqttManager::handleMessage(char* topic, byte* payload, unsigned int length) {
@@ -48,37 +46,52 @@ void MqttManager::handleMessage(char* topic, byte* payload, unsigned int length)
   unsigned long duration = doc["durationMs"] | 5000;
 
   if (command && (strcmp(command, "UNLOCK") == 0 || strcmp(command, "OPEN_DOOR") == 0)) {
-    currentActiveBox = targetBox > 0 ? targetBox : BOX_NUMBER;
-    Serial.print("[CMD] Nhận lệnh mở Ngăn #");
-    Serial.print(currentActiveBox);
-    Serial.println(" -> Kích hoạt Rơ-le mở chốt Solenoid");
-    lockManager.unlock(duration);
-    displayManager.showSuccess(currentActiveBox);
-    publishStatus("DOOR_UNLOCKED");
+    Serial.printf("[CMD] Nhận lệnh mở Ngăn #%d -> Kích hoạt Rơ-le mở chốt Solenoid\n", targetBox);
+    if (!boxController.unlock(targetBox, duration)) {
+      Serial.printf("[CMD] Không mở được Ngăn #%d (số ngăn không hợp lệ hoặc ngăn khác đang mở)\n", targetBox);
+      return;
+    }
+    displayManager.showSuccess(targetBox);
+    publishStatus("DOOR_UNLOCKED", targetBox);
   } else if (command && strcmp(command, "PAYMENT_REQUIRED") == 0) {
-    currentActiveBox = targetBox > 0 ? targetBox : BOX_NUMBER;
+    if (!boxController.hasBox(targetBox)) {
+      Serial.printf("[CMD] Bỏ qua yêu cầu thanh toán: Ngăn #%d không hợp lệ\n", targetBox);
+      return;
+    }
     int feeAmount = doc["feeAmount"] | 0;
     long orderCode = doc["orderCode"] | 0;
     const char* qrPayload = doc["qrPayload"] | doc["paymentUrl"] | "";
     const char* message = doc["message"] | "Vui long thanh toan phi mo tu";
 
     Serial.printf("[CMD] Nhận yêu cầu thanh toán Ngăn #%d - Cước phí: %d VNĐ - Order #%ld\n",
-                  currentActiveBox, feeAmount, orderCode);
-    displayManager.showPaymentQr(currentActiveBox, feeAmount, orderCode, qrPayload, message);
+                  targetBox, feeAmount, orderCode);
+    displayManager.showPaymentQr(targetBox, feeAmount, orderCode, qrPayload, message);
   }
 }
 
-// Báo cáo trạng thái hoạt động của tủ và cảm biến lên Broker
-void MqttManager::publishStatus(const char* eventType) {
+// Báo cáo trạng thái lên Broker, bản tin gắn số ngăn mang trạng thái của đúng ngăn đó, bản tin chung số ngăn bằng 0 kèm ảnh chụp cả các ngăn
+void MqttManager::publishStatus(const char* eventType, int boxNumber) {
   JsonDocument doc;
   doc["device"] = LOCKER_CODE;
-  doc["boxNumber"] = currentActiveBox;
+  doc["boxNumber"] = boxNumber;
   doc["event"] = eventType;
-  doc["doorStatus"] = sensorManager.isDoorClosed() ? "CLOSED" : "OPEN";
-  doc["hasItem"] = sensorManager.hasItem();
   doc["uptimeSec"] = millis() / 1000;
 
-  char buffer[256];
+  if (boxNumber > 0) {
+    doc["doorStatus"] = boxController.isDoorClosed(boxNumber) ? "CLOSED" : "OPEN";
+    doc["hasItem"] = boxController.hasItem(boxNumber);
+  } else {
+    JsonArray boxes = doc["boxes"].to<JsonArray>();
+    for (size_t i = 0; i < boxController.count(); i++) {
+      int box = boxController.boxNumberAt(i);
+      JsonObject item = boxes.add<JsonObject>();
+      item["boxNumber"] = box;
+      item["doorStatus"] = boxController.isDoorClosed(box) ? "CLOSED" : "OPEN";
+      item["hasItem"] = boxController.hasItem(box);
+    }
+  }
+
+  char buffer[512];
   serializeJson(doc, buffer);
   mqttClient.publish(statusTopic.c_str(), buffer);
   Serial.print("[MQTT_PUB] Đã gửi: ");

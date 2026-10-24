@@ -2,12 +2,12 @@
 
 // Khởi tạo cảm biến với các chân GPIO tương ứng
 SensorManager::SensorManager(uint8_t reed, uint8_t ir)
-  : reedPin(reed), irPin(ir), lastDoorClosed(true), lastHasItem(false), lastCheckTime(0) {}
+  : reedPin(reed), irPin(ir), lastDoorClosed(true), lastHasItem(false), lastCheckTime(0), lastIrCheckTime(0) {}
 
-// Cấu hình điện trở kéo lên cho chân công tắc từ và hồng ngoại
+// Cấu hình chân công tắc từ có điện trở kéo lên, chân hồng ngoại để đầu vào thường vì module tự kéo mức
 void SensorManager::begin() {
   pinMode(reedPin, INPUT_PULLUP);
-  pinMode(irPin, INPUT_PULLUP);
+  pinMode(irPin, INPUT);
   lastDoorClosed = isDoorClosed();
   lastHasItem = hasItem();
 }
@@ -48,11 +48,10 @@ bool SensorManager::checkDoorStateChanged(bool& currentClosed) {
 
 // Phát hiện thay đổi trạng thái có hàng hay trống của ngăn tủ
 bool SensorManager::checkItemStateChanged(bool& currentItem) {
-  static unsigned long lastIrCheck = 0;
-  if (millis() - lastIrCheck < 500) {
+  if (millis() - lastIrCheckTime < 500) {
     return false;
   }
-  lastIrCheck = millis();
+  lastIrCheckTime = millis();
   bool item = hasItem();
   bool changed = (item != lastHasItem);
   if (changed) {
